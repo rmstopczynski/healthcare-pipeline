@@ -42,40 +42,67 @@ Julian date dimension). See `docs/erd/` for both diagrams.
 
 ## Quickstart
 
-Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+— nothing else. `scripts/` runs every command (psql, python, dbt) *inside*
+the containers, so your host machine doesn't need psql, Python, dbt, or
+any Python packages installed at all.
 
 ```bash
-# 1. Start Postgres + Adminer (web UI at localhost:8080)
-docker compose up -d
+# 1. Start Postgres, Adminer, and Airflow (first run builds a custom
+#    Airflow image with psql + dbt baked in — takes a few minutes)
+docker compose up -d --build
 
-# 2. Build the schema (run in order)
+# 2. Run the whole pipeline: schema, synthetic data, transforms, validation
+./scripts/run_all.sh
+```
+
+That's it — two commands, nothing installed on your machine besides
+Docker. `scripts/run_all.sh` calls the individual scripts in order, each
+usable on its own too:
+
+| Script | What it does |
+|---|---|
+| `scripts/setup_db.sh` | Creates raw/staging/analytics schemas + tables |
+| `scripts/load_data.sh` | Generates synthetic data and loads it into `raw.*` |
+| `scripts/run_transforms.sh` | Runs the raw-SQL staging + analytics transforms |
+| `scripts/run_dbt.sh` | Alternative to the above: runs `dbt run` + `dbt test` instead |
+| `scripts/validate.sh` | Prints row counts across all three layers |
+
+Credentials (dev-only, safe to keep public): user `healthcare`, password
+`healthcare`, database `healthcare_db`.
+
+Airflow UI: `http://localhost:8083` (admin credentials auto-generated on
+first boot, printed in `docker logs healthcare_airflow`). Adminer (DB
+browser): `http://localhost:8080`.
+
+### Alternative: running commands directly on your host
+
+If you'd rather install `psql`/Python/dbt locally and run commands
+yourself instead of through the wrapper scripts (useful if you're
+actively developing and want faster iteration), the equivalent manual
+sequence is:
+
+```bash
 psql -h 127.0.0.1 -p 5432 -U healthcare -d healthcare_db -f sql/00_setup_schemas.sql
 psql -h 127.0.0.1 -p 5432 -U healthcare -d healthcare_db -f sql/01_raw_tables.sql
 psql -h 127.0.0.1 -p 5432 -U healthcare -d healthcare_db -f sql/02_staging_tables.sql
 psql -h 127.0.0.1 -p 5432 -U healthcare -d healthcare_db -f sql/03_analytics_tables.sql
 
-# 3. Generate + load synthetic data (no real patient data was ever
-#    available for this project — see "Data" below)
 python3 data/generate_synthetic_data.py
 psql -h 127.0.0.1 -p 5432 -U healthcare -d healthcare_db -f load_synthetic_data.sql
 
-# 4. Re-run the transforms now that raw has data
 psql -h 127.0.0.1 -p 5432 -U healthcare -d healthcare_db -f sql/02_staging_tables.sql
 psql -h 127.0.0.1 -p 5432 -U healthcare -d healthcare_db -f sql/03_analytics_tables.sql
 
-# 5. Validate
 psql -h 127.0.0.1 -p 5432 -U healthcare -d healthcare_db -f sql/04_validate_migration.sql
 ```
 
-Credentials (dev-only, safe to keep public): user `healthcare`, password
-`healthcare`, database `healthcare_db`.
-
 ### Optional: dbt transformation layer
 
-Steps 2 and 4 above (`sql/02_staging_tables.sql`, `sql/03_analytics_tables.sql`)
-can be replaced entirely with the dbt project in `dbt/` — same transforms,
-now with tests, documentation, and lineage. See `dbt/README.md` for full
-setup, but in short:
+`sql/02_staging_tables.sql` + `sql/03_analytics_tables.sql` (raw SQL) and
+the dbt project in `dbt/` build the *same* staging/analytics tables two
+different ways — use `scripts/run_dbt.sh` for the containerized version,
+or manually:
 
 ```bash
 pip install dbt-core dbt-postgres
@@ -138,7 +165,8 @@ GROUP BY d.year_num, d.month_num, d.month_name
 ORDER BY d.year_num, d.month_num;
 ```
 
-![sample query output](docs/sample_query_output.png)
+*(Paste a screenshot of real query output here once you've run it against
+your own generated data.)*
 
 ## dbt transformation layer
 
@@ -242,7 +270,8 @@ This is Step 1 of a larger platform build:
 1. ✅ **Cloud/local warehouse migration** (this repo)
 2. ✅ **dbt transformation layer** (staging/analytics as dbt models, 60 tests, docs, lineage)
 3. ✅ **Airflow orchestration** (scheduled, monitored, retryable end-to-end DAG)
-4. Docker Compose for the full stack (Airflow + dbt + Postgres) — already largely done as part of Step 3
+4. ✅ **Docker containerization** (`scripts/` runs the entire pipeline via `docker exec` —
+   no psql, Python, or dbt required on the host machine, just Docker Desktop)
 5. AWS S3 ingestion layer
 6. Spark/Databricks for large-dataset processing
 7. Kafka streaming for real-time events (admissions, lab results, vitals)
@@ -255,6 +284,13 @@ This is Step 1 of a larger platform build:
 ├── docker-compose.yml
 ├── Dockerfile.airflow
 ├── AIRFLOW_README.md
+├── scripts/                  # zero-host-dependency pipeline runners (docker exec wrappers)
+│   ├── run_all.sh
+│   ├── setup_db.sh
+│   ├── load_data.sh
+│   ├── run_transforms.sh
+│   ├── run_dbt.sh
+│   └── validate.sh
 ├── dags/
 │   └── healthcare_pipeline_dag.py
 ├── airflow_profiles/
