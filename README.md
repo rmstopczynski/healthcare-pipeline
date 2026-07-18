@@ -122,8 +122,7 @@ GROUP BY d.year_num, d.month_num, d.month_name
 ORDER BY d.year_num, d.month_num;
 ```
 
-*(Paste a screenshot of real query output here once you've run it against
-your own generated data.)*
+![Sample query output](docs/sample_query_output.png)
 
 ## Challenges encountered (and how they were resolved)
 
