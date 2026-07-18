@@ -70,6 +70,22 @@ psql -h 127.0.0.1 -p 5432 -U healthcare -d healthcare_db -f sql/04_validate_migr
 Credentials (dev-only, safe to keep public): user `healthcare`, password
 `healthcare`, database `healthcare_db`.
 
+### Optional: dbt transformation layer
+
+Steps 2 and 4 above (`sql/02_staging_tables.sql`, `sql/03_analytics_tables.sql`)
+can be replaced entirely with the dbt project in `dbt/` — same transforms,
+now with tests, documentation, and lineage. See `dbt/README.md` for full
+setup, but in short:
+
+```bash
+pip install dbt-core dbt-postgres
+mkdir -p ~/.dbt && cp dbt/profiles.yml.sample ~/.dbt/profiles.yml
+cd dbt/healthcare_dbt
+dbt run             # builds all staging views + mart tables
+dbt test            # 60 tests: unique, not_null, relationships, accepted_values
+dbt docs generate && dbt docs serve --port 8081
+```
+
 ## Data
 
 No production/real dataset was available for this project (the original
@@ -122,7 +138,30 @@ GROUP BY d.year_num, d.month_num, d.month_name
 ORDER BY d.year_num, d.month_num;
 ```
 
-![Sample query output](docs/sample_query_output.png)
+![sample query output](docs/sample_query_output.png)
+
+## dbt transformation layer
+
+The `dbt/` folder reimplements the staging and analytics layers as a dbt
+project: 12 staging models (one per raw table) and 7 mart models (`dim_date`,
+`dim_patient`, `dim_doctor`, `dim_medication`, `dim_procedure`,
+`fact_prescription`, `fact_hospital_visit`), all connected via `ref()`/
+`source()` so dbt can build the full dependency graph automatically.
+
+**60/60 tests pass** — every primary key is checked `unique`/`not_null`,
+and every foreign key in a fact table is checked with a `relationships`
+test against its dimension. This is the automated version of the
+column-width bug documented below: with these tests in place, that bug
+would have failed loudly and specifically instead of silently producing
+empty downstream tables.
+
+`dbt docs generate && dbt docs serve` renders an interactive, searchable
+lineage graph for the whole project. Example — `fact_hospital_visit` traced
+back through its four staging models to their raw sources:
+
+![dbt lineage graph](docs/dbt_lineage_graph.png)
+
+See `dbt/README.md` for full setup and details on what each test checks.
 
 ## Challenges encountered (and how they were resolved)
 
@@ -158,7 +197,7 @@ engineering effort:
 This is Step 1 of a larger platform build:
 
 1. ✅ **Cloud/local warehouse migration** (this repo)
-2. dbt transformation layer (staging/analytics as dbt models, tests, docs, lineage)
+2. ✅ **dbt transformation layer** (staging/analytics as dbt models, 60 tests, docs, lineage)
 3. Airflow orchestration
 4. Docker Compose for the full stack (Airflow + dbt + Postgres)
 5. AWS S3 ingestion layer
@@ -178,10 +217,20 @@ This is Step 1 of a larger platform build:
 │   ├── 03_analytics_tables.sql
 │   ├── 04_validate_migration.sql
 │   └── 05_sample_queries.sql
+├── dbt/
+│   ├── README.md
+│   ├── profiles.yml.sample
+│   └── healthcare_dbt/
+│       ├── dbt_project.yml
+│       ├── macros/
+│       └── models/
+│           ├── staging/    # 12 stg_ models + sources.yml + tests
+│           └── marts/      # 7 dim_/fact_ models + tests
 ├── data/
 │   └── generate_synthetic_data.py
 ├── load_synthetic_data.sql
 ├── snowflake/              # original Snowflake-dialect DDL
 └── docs/
-    └── erd/                # source ER diagrams
+    ├── erd/                # source ER diagrams
+    └── dbt_lineage_graph.png
 ```
