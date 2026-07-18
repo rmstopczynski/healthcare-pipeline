@@ -41,6 +41,7 @@ services:
     restart: unless-stopped
     depends_on:
       - postgres
+      - minio
     environment:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
@@ -56,6 +57,51 @@ services:
       - airflow_home:/opt/airflow
     command: standalone
 
+  # ---------------------------------------------------------------------
+  # MinIO — an S3-compatible object store, standing in for AWS S3.
+  # Same API as real S3 (same boto3 calls), so code written against this
+  # is genuinely portable to real AWS later -- just a different endpoint
+  # URL and credentials. No AWS account, no billing risk.
+  #
+  # Console UI (browse buckets/files) at http://localhost:9001
+  # S3 API endpoint (what boto3/scripts talk to) at http://localhost:9000
+  # ---------------------------------------------------------------------
+  minio:
+    image: minio/minio
+    container_name: healthcare_minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # One-shot container: creates the "healthcare-raw-files" bucket on
+  # startup, then exits. Using the official MinIO client (mc) rather
+  # than a custom script keeps this simple and reliable.
+  minio-init:
+    image: minio/mc
+    container_name: healthcare_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin &&
+      mc mb -p local/healthcare-raw-files &&
+      echo 'Bucket ready.'
+      "
+
 volumes:
   healthcare_pg_data:
   airflow_home:
+  minio_data:

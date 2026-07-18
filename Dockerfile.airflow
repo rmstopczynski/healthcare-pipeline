@@ -1,5 +1,7 @@
-# Extends the official Airflow image with the two things our DAG needs
-# that aren't there by default: the psql client, and dbt.
+# Extends the official Airflow image with everything our DAG and
+# scripts need that isn't there by default: the psql client, dbt,
+# faker (for synthetic data generation), boto3 (S3/MinIO client), and
+# psycopg2 (direct Postgres access from Python).
 FROM apache/airflow:2.9.3
 
 USER root
@@ -9,4 +11,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 USER airflow
-RUN pip install --no-cache-dir dbt-core==1.8.* dbt-postgres==1.8.* faker
+RUN pip install --no-cache-dir \
+    dbt-core==1.8.* \
+    dbt-postgres==1.8.* \
+    faker \
+    boto3 \
+    psycopg2-binary

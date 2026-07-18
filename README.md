@@ -214,6 +214,31 @@ hand. See `AIRFLOW_README.md` for full setup and a note on why this uses
 `standalone`/`SequentialExecutor` rather than a full `CeleryExecutor`
 production setup.
 
+## MinIO / S3-pattern ingestion
+
+Adds an object-storage hop before data reaches `raw.*`: CSVs land in
+[MinIO](https://min.io/) (an S3-compatible object store, running
+locally in Docker) before being loaded into Postgres — mirroring how a
+real cloud pipeline stages files in S3 before `COPY INTO`-ing them into
+a warehouse. Written against the standard `boto3` S3 client, so the same
+code works against real AWS S3 with just a different endpoint and
+credentials.
+
+Real AWS wasn't used here deliberately — AWS now requires a card at
+signup even for free-tier usage, not worth the risk for a local demo
+project. MinIO gets the actual ingestion pattern right without that
+risk; the honest gap is this skips the IAM/console side of real AWS,
+since there's no AWS account involved.
+
+```bash
+./scripts/run_all_via_s3.sh
+```
+
+Browse what actually landed in object storage at `http://localhost:9001`
+(login: `minioadmin`/`minioadmin`) — a real bucket with all 12 CSVs under
+a `raw/` prefix, same as they'd sit in production S3. See
+`MINIO_README.md` for full details.
+
 ## Challenges encountered (and how they were resolved)
 
 Documenting these because working through them was most of the actual
@@ -272,7 +297,8 @@ This is Step 1 of a larger platform build:
 3. ✅ **Airflow orchestration** (scheduled, monitored, retryable end-to-end DAG)
 4. ✅ **Docker containerization** (`scripts/` runs the entire pipeline via `docker exec` —
    no psql, Python, or dbt required on the host machine, just Docker Desktop)
-5. AWS S3 ingestion layer
+5. ✅ **S3-pattern ingestion** (MinIO, S3-compatible, in place of real AWS S3 —
+   see the section above for why; the actual `boto3` code is portable to real AWS)
 6. Spark/Databricks for large-dataset processing
 7. Kafka streaming for real-time events (admissions, lab results, vitals)
 8. Data quality & governance layer (Great Expectations, dbt tests, data
@@ -284,10 +310,15 @@ This is Step 1 of a larger platform build:
 ├── docker-compose.yml
 ├── Dockerfile.airflow
 ├── AIRFLOW_README.md
+├── MINIO_README.md
 ├── scripts/                  # zero-host-dependency pipeline runners (docker exec wrappers)
 │   ├── run_all.sh
+│   ├── run_all_via_s3.sh     # same pipeline, routed through MinIO
 │   ├── setup_db.sh
+│   ├── generate_data.sh
 │   ├── load_data.sh
+│   ├── upload_to_s3.sh
+│   ├── load_from_s3.sh
 │   ├── run_transforms.sh
 │   ├── run_dbt.sh
 │   └── validate.sh
@@ -312,7 +343,9 @@ This is Step 1 of a larger platform build:
 │           ├── staging/    # 12 stg_ models + sources.yml + tests
 │           └── marts/      # 7 dim_/fact_ models + tests
 ├── data/
-│   └── generate_synthetic_data.py
+│   ├── generate_synthetic_data.py
+│   ├── upload_to_object_storage.py
+│   └── load_from_object_storage.py
 ├── load_synthetic_data.sql
 ├── snowflake/              # original Snowflake-dialect DDL
 └── docs/
