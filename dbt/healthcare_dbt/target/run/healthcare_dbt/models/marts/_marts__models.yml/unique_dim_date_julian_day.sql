@@ -1,5 +1,4 @@
 
-    
     select
       count(*) as failures,
       count(*) != 0 as should_warn,

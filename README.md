@@ -163,6 +163,29 @@ back through its four staging models to their raw sources:
 
 See `dbt/README.md` for full setup and details on what each test checks.
 
+## Airflow orchestration
+
+The `dags/healthcare_pipeline_dag.py` DAG chains the whole pipeline into
+one scheduled, monitored run: `generate_synthetic_data → load_raw_data →
+dbt_run → dbt_test → validate_migration`. Runs in Airflow's `standalone`
+mode (single container, SQLite metadata DB) via a custom image
+(`Dockerfile.airflow`) with `psql`, `dbt-core`, and `dbt-postgres` baked
+in on top of the official Airflow image.
+
+```bash
+docker compose up -d --build   # first run builds the custom image, takes a few minutes
+```
+
+Web UI at `http://localhost:8083` (admin credentials are auto-generated
+and printed in `docker logs healthcare_airflow` on first boot).
+
+Every task passed end to end on a full run: `dbt_run` built all 19 models,
+`dbt_test` passed all 60 tests, `validate_migration` confirmed matching
+row counts across raw/staging/analytics — all orchestrated, not run by
+hand. See `AIRFLOW_README.md` for full setup and a note on why this uses
+`standalone`/`SequentialExecutor` rather than a full `CeleryExecutor`
+production setup.
+
 ## Challenges encountered (and how they were resolved)
 
 Documenting these because working through them was most of the actual
@@ -191,6 +214,26 @@ engineering effort:
   cross-checking row counts against `information_schema.tables` rather
   than trusting "no error" as confirmation of success; resolved by running
   full scripts via `psql -f` instead, which doesn't have this ambiguity.
+- **Missing dependency in the custom Airflow image.** `Dockerfile.airflow`
+  originally installed `dbt-core`/`dbt-postgres` but not `faker`, which
+  `generate_synthetic_data.py` actually imports. The task didn't fail
+  loudly — it showed as `state=up_for_retry` in the scheduler logs, easy
+  to miss in Airflow's very verbose standalone-mode output. Confirmed the
+  real cause with `airflow tasks test <dag> <task> <date>`, which runs a
+  single task in isolation and prints only its own output — a much better
+  debugging tool than scrolling the full multi-service log stream.
+- **Non-idempotent raw load, masked by staging's own dedup logic.**
+  `load_synthetic_data.sql` originally used `\copy` without a preceding
+  `TRUNCATE`, so re-running it (as the Airflow DAG does on every trigger)
+  appended a second copy of every row instead of replacing it —
+  `raw.patients` went 250 → 500 on a second run. Notably,
+  `staging`/`analytics` row counts stayed exactly correct the whole time,
+  because `stg_*` models already dedup on primary key
+  (`DISTINCT ON (id) ... ORDER BY id`) — a genuine resilience property,
+  but one that let a real bug in `raw` hide silently rather than surface
+  as a test failure. Fixed by adding `TRUNCATE ... CASCADE` immediately
+  before each `\copy`, making the raw load idempotent and consistent
+  with its "untouched snapshot" description.
 
 ## Roadmap
 
@@ -198,8 +241,8 @@ This is Step 1 of a larger platform build:
 
 1. ✅ **Cloud/local warehouse migration** (this repo)
 2. ✅ **dbt transformation layer** (staging/analytics as dbt models, 60 tests, docs, lineage)
-3. Airflow orchestration
-4. Docker Compose for the full stack (Airflow + dbt + Postgres)
+3. ✅ **Airflow orchestration** (scheduled, monitored, retryable end-to-end DAG)
+4. Docker Compose for the full stack (Airflow + dbt + Postgres) — already largely done as part of Step 3
 5. AWS S3 ingestion layer
 6. Spark/Databricks for large-dataset processing
 7. Kafka streaming for real-time events (admissions, lab results, vitals)
@@ -210,6 +253,12 @@ This is Step 1 of a larger platform build:
 
 ```
 ├── docker-compose.yml
+├── Dockerfile.airflow
+├── AIRFLOW_README.md
+├── dags/
+│   └── healthcare_pipeline_dag.py
+├── airflow_profiles/
+│   └── profiles.yml         # dbt profile used inside the Airflow container
 ├── sql/
 │   ├── 00_setup_schemas.sql
 │   ├── 01_raw_tables.sql

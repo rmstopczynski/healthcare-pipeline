@@ -12,8 +12,8 @@ services:
     volumes:
       - healthcare_pg_data:/var/lib/postgresql/data
 
-  # Optional lightweight web UI for browsing tables/running queries,
-  # at http://localhost:8080 (server: postgres, user/pass/db as above)
+  # Web UI for browsing tables/running queries, at http://localhost:8080
+  # (server: postgres, user/pass/db as above)
   adminer:
     image: adminer
     container_name: healthcare_adminer
@@ -23,5 +23,39 @@ services:
     depends_on:
       - postgres
 
+  # ---------------------------------------------------------------------
+  # Airflow — orchestrates the pipeline (generate data -> load -> dbt run
+  # -> dbt test -> validate) as a scheduled, monitored DAG instead of
+  # commands run by hand. Runs in "standalone" mode: single container,
+  # SQLite metadata DB, auto-creates an admin user on first boot.
+  #
+  # NOTE: on first run, this builds a custom image (installs psql + dbt
+  # on top of the official Airflow image) and can take several minutes.
+  # Web UI at http://localhost:8083 once it's up.
+  # ---------------------------------------------------------------------
+  airflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: healthcare_airflow
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    ports:
+      - "8083:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./sql:/opt/airflow/sql
+      - ./dbt:/opt/airflow/dbt
+      - ./data:/opt/airflow/data
+      - ./airflow_profiles:/opt/airflow/airflow_profiles
+      - ./load_synthetic_data.sql:/opt/airflow/load_synthetic_data.sql
+      - airflow_home:/opt/airflow
+    command: standalone
+
 volumes:
   healthcare_pg_data:
+  airflow_home:
