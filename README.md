@@ -165,8 +165,7 @@ GROUP BY d.year_num, d.month_num, d.month_name
 ORDER BY d.year_num, d.month_num;
 ```
 
-*(Paste a screenshot of real query output here once you've run it against
-your own generated data.)*
+![sample query output](docs/sample_query_output.png)
 
 ## dbt transformation layer
 
@@ -287,6 +286,20 @@ engineering effort:
   as a test failure. Fixed by adding `TRUNCATE ... CASCADE` immediately
   before each `\copy`, making the raw load idempotent and consistent
   with its "untouched snapshot" description.
+- **Git Bash silently mangling container paths.** `upload_to_s3.sh`
+  passed `/opt/airflow/data/upload_to_object_storage.py` as a bare
+  argument to `docker exec`. Git Bash's MSYS2 layer auto-translates
+  arguments that look like POSIX absolute paths into Windows paths
+  before the command ever runs — so the container received
+  `C:/Program Files/Git/opt/airflow/data/...`, a path that only exists
+  on the Windows host, not inside the container. Other scripts in this
+  project were accidentally immune: they wrap their command in
+  `bash -c "..."` as a single string, and MSYS2's path-detection
+  heuristic doesn't fire on a whole quoted command the same way it does
+  on a bare path argument. Fixed by wrapping the same way — a good
+  example of a bug that's specific to the *combination* of tools
+  (Windows + Git Bash + Docker), not any one piece in isolation, and one
+  that only reproduces on that specific host setup.
 
 ## Roadmap
 
