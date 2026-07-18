@@ -1,0 +1,102 @@
+version: 2
+
+models:
+  - name: dim_date
+    description: >
+      Date dimension, one row per calendar day, 2010-01-01 through
+      2029-12-31. Independent of source data volume.
+    columns:
+      - name: julian_day
+        description: Surrogate key in YYYYMMDD integer format.
+        tests: [unique, not_null]
+
+  - name: dim_medication
+    description: Medication dimension.
+    columns:
+      - name: medication_id
+        tests: [unique, not_null]
+
+  - name: dim_procedure
+    description: Medical procedure dimension.
+    columns:
+      - name: procedure_id
+        tests: [unique, not_null]
+
+  - name: dim_doctor
+    description: >
+      Doctor dimension, denormalized with their affiliated hospital's
+      name, phone, and full address chain (city/state/zip).
+    columns:
+      - name: doctor_id
+        tests: [unique, not_null]
+
+  - name: dim_patient
+    description: >
+      Patient dimension with computed age/age_group and up to two
+      insurance policies (primary/secondary) flattened onto the row.
+    columns:
+      - name: patient_id
+        tests: [unique, not_null]
+      - name: age_group
+        tests:
+          - accepted_values:
+              values: ['Under 18', '18-34', '35-54', '55-74', '75+']
+
+  - name: fact_prescription
+    description: >
+      One row per prescription. Grain: prescription_id.
+    columns:
+      - name: prescription_id
+        tests: [unique, not_null]
+      - name: patient_id
+        tests:
+          - relationships:
+              to: ref('dim_patient')
+              field: patient_id
+      - name: doctor_id
+        tests:
+          - relationships:
+              to: ref('dim_doctor')
+              field: doctor_id
+      - name: medication_id
+        tests:
+          - relationships:
+              to: ref('dim_medication')
+              field: medication_id
+      - name: prescribed_date
+        tests:
+          - relationships:
+              to: ref('dim_date')
+              field: julian_day
+
+  - name: fact_hospital_visit
+    description: >
+      One row per hospital visit. Grain: visit_id.
+    columns:
+      - name: visit_id
+        tests: [unique, not_null]
+      - name: patient_id
+        tests:
+          - relationships:
+              to: ref('dim_patient')
+              field: patient_id
+      - name: doctor_id
+        tests:
+          - relationships:
+              to: ref('dim_doctor')
+              field: doctor_id
+      - name: procedure_id
+        tests:
+          - relationships:
+              to: ref('dim_procedure')
+              field: procedure_id
+      - name: admission_date
+        tests:
+          - relationships:
+              to: ref('dim_date')
+              field: julian_day
+      - name: discharge_date
+        tests:
+          - relationships:
+              to: ref('dim_date')
+              field: julian_day

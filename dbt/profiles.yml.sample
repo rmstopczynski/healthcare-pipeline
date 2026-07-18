@@ -1,0 +1,24 @@
+# This file does NOT go in your git repo — dbt looks for it at
+# ~/.dbt/profiles.yml (a fixed location outside any project folder),
+# specifically so connection details/credentials never get committed.
+#
+# Setup:
+#   mkdir -p ~/.dbt
+#   cp profiles.yml.sample ~/.dbt/profiles.yml
+#
+# (The dev-only healthcare/healthcare credentials below are fine to
+# keep as-is since they're local Docker Postgres creds, not anything
+# real — but keeping this file out of git is still the right habit.)
+
+healthcare_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: 127.0.0.1
+      port: 5432
+      user: healthcare
+      password: healthcare
+      dbname: healthcare_db
+      schema: public
+      threads: 4

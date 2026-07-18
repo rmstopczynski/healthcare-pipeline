@@ -1,0 +1,141 @@
+version: 2
+
+models:
+  - name: stg_states
+    description: Cleaned, deduplicated states reference table.
+    columns:
+      - name: state_id
+        tests: [unique, not_null]
+
+  - name: stg_cities
+    description: Cleaned, deduplicated cities reference table.
+    columns:
+      - name: city_id
+        tests: [unique, not_null]
+      - name: state_id
+        tests:
+          - relationships:
+              to: ref('stg_states')
+              field: state_id
+
+  - name: stg_addresses
+    description: Cleaned, deduplicated addresses reference table.
+    columns:
+      - name: address_id
+        tests: [unique, not_null]
+      - name: city_id
+        tests:
+          - relationships:
+              to: ref('stg_cities')
+              field: city_id
+
+  - name: stg_hospitals
+    description: Cleaned, deduplicated hospitals reference table.
+    columns:
+      - name: hospital_id
+        tests: [unique, not_null]
+      - name: address_id
+        tests:
+          - relationships:
+              to: ref('stg_addresses')
+              field: address_id
+
+  - name: stg_doctors
+    description: Cleaned, deduplicated doctors table.
+    columns:
+      - name: doctor_id
+        tests: [unique, not_null]
+      - name: hospital_affi
+        tests:
+          - relationships:
+              to: ref('stg_hospitals')
+              field: hospital_id
+
+  - name: stg_medications
+    description: Cleaned, deduplicated medications reference table.
+    columns:
+      - name: medication_id
+        tests: [unique, not_null]
+
+  - name: stg_procedures
+    description: Cleaned, deduplicated procedures reference table.
+    columns:
+      - name: procedure_id
+        tests: [unique, not_null]
+
+  - name: stg_insurance_providers
+    description: Cleaned, deduplicated insurance providers reference table.
+    columns:
+      - name: insurance_provider_id
+        tests: [unique, not_null]
+
+  - name: stg_patients
+    description: Cleaned, deduplicated patients table.
+    columns:
+      - name: patient_id
+        tests: [unique, not_null]
+      - name: sex
+        tests:
+          - accepted_values:
+              values: ['M', 'F']
+
+  - name: stg_patient_insurance
+    description: Patient-to-insurance-provider bridge table (many-to-many).
+    columns:
+      - name: patient_id
+        tests:
+          - relationships:
+              to: ref('stg_patients')
+              field: patient_id
+      - name: insurance_provider_id
+        tests:
+          - relationships:
+              to: ref('stg_insurance_providers')
+              field: insurance_provider_id
+
+  - name: stg_prescriptions
+    description: Cleaned, deduplicated prescriptions table.
+    columns:
+      - name: prescription_id
+        tests: [unique, not_null]
+      - name: patient_id
+        tests:
+          - relationships:
+              to: ref('stg_patients')
+              field: patient_id
+      - name: doctor_id
+        tests:
+          - relationships:
+              to: ref('stg_doctors')
+              field: doctor_id
+      - name: medication_id
+        tests:
+          - relationships:
+              to: ref('stg_medications')
+              field: medication_id
+
+  - name: stg_hospital_visits
+    description: Cleaned, deduplicated hospital visits table.
+    columns:
+      - name: visit_id
+        tests: [unique, not_null]
+      - name: patient_id
+        tests:
+          - relationships:
+              to: ref('stg_patients')
+              field: patient_id
+      - name: doctor_id
+        tests:
+          - relationships:
+              to: ref('stg_doctors')
+              field: doctor_id
+      - name: hospital_id
+        tests:
+          - relationships:
+              to: ref('stg_hospitals')
+              field: hospital_id
+      - name: procedure_id
+        tests:
+          - relationships:
+              to: ref('stg_procedures')
+              field: procedure_id

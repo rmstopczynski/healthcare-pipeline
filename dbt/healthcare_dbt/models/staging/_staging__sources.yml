@@ -1,0 +1,21 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    description: >
+      Untouched landing tables, loaded directly from CSV exports.
+      Mirrors the original normalized (3NF) source schema 1:1.
+    tables:
+      - name: states
+      - name: cities
+      - name: addresses
+      - name: hospitals
+      - name: doctors
+      - name: medications
+      - name: procedures
+      - name: insurance_providers
+      - name: patients
+      - name: patient_insurance
+      - name: prescriptions
+      - name: hospital_visits

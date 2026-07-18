@@ -1,0 +1,16 @@
+select
+    doc.doctor_id,
+    doc.first_name,
+    doc.last_name,
+    doc.specialty,
+    doc.doc_phone_no,
+    hosp.hospital_name       as hospital_affi,
+    st.state_name             as hospital_state,
+    ci.city_name               as hospital_city,
+    addr.zip                    as hospital_zip,
+    hosp.hospital_phone_no
+from {{ ref('stg_doctors') }} doc
+left join {{ ref('stg_hospitals') }} hosp on doc.hospital_affi = hosp.hospital_id
+left join {{ ref('stg_addresses') }} addr on hosp.address_id = addr.address_id
+left join {{ ref('stg_cities') }} ci on addr.city_id = ci.city_id
+left join {{ ref('stg_states') }} st on ci.state_id = st.state_id
