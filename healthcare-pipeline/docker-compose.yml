@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: healthcare_pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: healthcare
+      POSTGRES_PASSWORD: healthcare
+      POSTGRES_DB: healthcare_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - healthcare_pg_data:/var/lib/postgresql/data
+
+  # Optional lightweight web UI for browsing tables/running queries,
+  # at http://localhost:8080 (server: postgres, user/pass/db as above)
+  adminer:
+    image: adminer
+    container_name: healthcare_adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+
+volumes:
+  healthcare_pg_data:
