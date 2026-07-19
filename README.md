@@ -19,6 +19,26 @@ Source (Oracle-style, 3NF)
    ANALYTICS schema        ← star schema: fact tables + conformed dimensions
 ```
 
+Full architecture (all 7 layers): `docs/architecture_diagram.svg`
+
+## Contents
+
+- [Why Postgres instead of Snowflake](#why-postgres-instead-of-snowflake)
+- [Source schema](#source-schema)
+- [Quickstart](#quickstart)
+- [Data](#data)
+- [Validated results](#validated-results)
+- [Sample queries](#sample-queries)
+- [dbt transformation layer](#dbt-transformation-layer)
+- [Airflow orchestration](#airflow-orchestration)
+- [MinIO / S3-pattern ingestion](#minio--s3-pattern-ingestion)
+- [PySpark distributed processing](#pyspark-distributed-processing)
+- [Kafka streaming](#kafka-streaming)
+- [Challenges encountered](#challenges-encountered-and-how-they-were-resolved)
+- [Roadmap](#roadmap)
+- [Repo structure](#repo-structure)
+- [Resume & interview talking points](RESUME_TALKING_POINTS.md)
+
 ## Why Postgres instead of Snowflake
 
 This was originally designed as a Snowflake migration (see `snowflake/` for
@@ -291,7 +311,8 @@ event_type`, or browse the topic itself in Kafka UI at
 ## Challenges encountered (and how they were resolved)
 
 Documenting these because working through them was most of the actual
-engineering effort:
+engineering effort. Trimmed to the ones that generalize into an actual
+lesson, not just "and then it worked":
 
 - **Port 5432 conflict.** Two pre-existing native Windows PostgreSQL
   services (versions 17 and 18) were already bound to port 5432, silently
@@ -316,26 +337,6 @@ engineering effort:
   cross-checking row counts against `information_schema.tables` rather
   than trusting "no error" as confirmation of success; resolved by running
   full scripts via `psql -f` instead, which doesn't have this ambiguity.
-- **Missing dependency in the custom Airflow image.** `Dockerfile.airflow`
-  originally installed `dbt-core`/`dbt-postgres` but not `faker`, which
-  `generate_synthetic_data.py` actually imports. The task didn't fail
-  loudly — it showed as `state=up_for_retry` in the scheduler logs, easy
-  to miss in Airflow's very verbose standalone-mode output. Confirmed the
-  real cause with `airflow tasks test <dag> <task> <date>`, which runs a
-  single task in isolation and prints only its own output — a much better
-  debugging tool than scrolling the full multi-service log stream.
-- **Non-idempotent raw load, masked by staging's own dedup logic.**
-  `load_synthetic_data.sql` originally used `\copy` without a preceding
-  `TRUNCATE`, so re-running it (as the Airflow DAG does on every trigger)
-  appended a second copy of every row instead of replacing it —
-  `raw.patients` went 250 → 500 on a second run. Notably,
-  `staging`/`analytics` row counts stayed exactly correct the whole time,
-  because `stg_*` models already dedup on primary key
-  (`DISTINCT ON (id) ... ORDER BY id`) — a genuine resilience property,
-  but one that let a real bug in `raw` hide silently rather than surface
-  as a test failure. Fixed by adding `TRUNCATE ... CASCADE` immediately
-  before each `\copy`, making the raw load idempotent and consistent
-  with its "untouched snapshot" description.
 - **Git Bash silently mangling container paths — twice, two different
   ways.** First occurrence: `upload_to_s3.sh` passed
   `/opt/airflow/data/upload_to_object_storage.py` as a bare argument to
@@ -370,13 +371,6 @@ engineering effort:
   image's bundled Hadoop version on the first real try — not guaranteed,
   and `SPARK_README.md` documents the fallback (`spark-submit --version`)
   for when they don't.
-- **Missing schema caught by the JDBC write itself.** The first full
-  Spark run got all the way through reading, joining, and writing
-  partitioned Parquet, then failed on the very last step —
-  `schema "spark_analytics" does not exist` — because the schema-creation
-  script had been updated to add it, but hadn't been re-run since the
-  file was replaced. A reminder that "replace the file" and "re-run the
-  file" are two separate steps, easy to do out of order.
 
 ## Roadmap
 
