@@ -19,7 +19,9 @@ Source (Oracle-style, 3NF)
    ANALYTICS schema        ← star schema: fact tables + conformed dimensions
 ```
 
-Full architecture (all 7 layers): `docs/architecture_diagram.svg`
+Full architecture (all 7 layers):
+
+![Architecture diagram](docs/architecture_diagram.svg)
 
 ## Contents
 
@@ -185,8 +187,7 @@ GROUP BY d.year_num, d.month_num, d.month_name
 ORDER BY d.year_num, d.month_num;
 ```
 
-*(Paste a screenshot of real query output here once you've run it against
-your own generated data.)*
+![Sample query output](docs/sample_query_output.png)
 
 ## dbt transformation layer
 
@@ -374,8 +375,6 @@ lesson, not just "and then it worked":
 
 ## Roadmap
 
-This is Step 1 of a larger platform build:
-
 1. ✅ **Cloud/local warehouse migration** (this repo)
 2. ✅ **dbt transformation layer** (staging/analytics as dbt models, 60 tests, docs, lineage)
 3. ✅ **Airflow orchestration** (scheduled, monitored, retryable end-to-end DAG)
@@ -387,8 +386,6 @@ This is Step 1 of a larger platform build:
    same DataFrame API/concepts, stays integrated and reproducible)
 7. ✅ **Kafka streaming** (plain `kafka-python` consumer rather than Spark
    Structured Streaming — same core Kafka mechanics, see the section above for why)
-8. Data quality & governance layer (Great Expectations, dbt tests, data
-   dictionary, lineage documentation)
 
 ## Repo structure
 
