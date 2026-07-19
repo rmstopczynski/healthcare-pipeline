@@ -24,13 +24,8 @@ services:
       - postgres
 
   # ---------------------------------------------------------------------
-  # Airflow — orchestrates the pipeline (generate data -> load -> dbt run
-  # -> dbt test -> validate) as a scheduled, monitored DAG instead of
-  # commands run by hand. Runs in "standalone" mode: single container,
-  # SQLite metadata DB, auto-creates an admin user on first boot.
-  #
-  # NOTE: on first run, this builds a custom image (installs psql + dbt
-  # on top of the official Airflow image) and can take several minutes.
+  # Airflow — orchestrates the pipeline as a scheduled, monitored DAG.
+  # "standalone" mode: single container, SQLite metadata DB.
   # Web UI at http://localhost:8083 once it's up.
   # ---------------------------------------------------------------------
   airflow:
@@ -58,13 +53,8 @@ services:
     command: standalone
 
   # ---------------------------------------------------------------------
-  # MinIO — an S3-compatible object store, standing in for AWS S3.
-  # Same API as real S3 (same boto3 calls), so code written against this
-  # is genuinely portable to real AWS later -- just a different endpoint
-  # URL and credentials. No AWS account, no billing risk.
-  #
-  # Console UI (browse buckets/files) at http://localhost:9001
-  # S3 API endpoint (what boto3/scripts talk to) at http://localhost:9000
+  # MinIO — S3-compatible object store, standing in for AWS S3.
+  # Console UI at http://localhost:9001, S3 API at http://localhost:9000
   # ---------------------------------------------------------------------
   minio:
     image: minio/minio
@@ -85,9 +75,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # One-shot container: creates the "healthcare-raw-files" bucket on
-  # startup, then exits. Using the official MinIO client (mc) rather
-  # than a custom script keeps this simple and reliable.
+  # One-shot: creates the "healthcare-raw-files" bucket, then exits.
   minio-init:
     image: minio/mc
     container_name: healthcare_minio_init
@@ -100,6 +88,31 @@ services:
       mc mb -p local/healthcare-raw-files &&
       echo 'Bucket ready.'
       "
+
+  # ---------------------------------------------------------------------
+  # Spark — PySpark jobs reading from MinIO (s3a://) and writing
+  # partitioned Parquet back to MinIO + a summary table into Postgres
+  # via JDBC. This is a batch-job image, not a long-running service --
+  # it's meant to be run with `docker compose run --rm spark ...`
+  # (see scripts/run_spark_job.sh), not left running via `up`.
+  #
+  # NOTE: first build downloads ~250MB of JARs (hadoop-aws, aws SDK,
+  # postgres JDBC driver) and can take several minutes.
+  # Spark UI (visible while a job is running) at http://localhost:4040
+  # ---------------------------------------------------------------------
+  spark:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: healthcare_spark
+    restart: "no"
+    depends_on:
+      - postgres
+      - minio
+    volumes:
+      - ./spark_jobs:/opt/spark_jobs
+    ports:
+      - "4040:4040"
 
 volumes:
   healthcare_pg_data:

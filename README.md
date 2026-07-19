@@ -165,7 +165,8 @@ GROUP BY d.year_num, d.month_num, d.month_name
 ORDER BY d.year_num, d.month_num;
 ```
 
-![sample query output](docs/sample_query_output.png)
+*(Paste a screenshot of real query output here once you've run it against
+your own generated data.)*
 
 ## dbt transformation layer
 
@@ -238,6 +239,30 @@ Browse what actually landed in object storage at `http://localhost:9001`
 a `raw/` prefix, same as they'd sit in production S3. See
 `MINIO_README.md` for full details.
 
+## PySpark distributed processing
+
+A PySpark job reads raw CSVs directly out of MinIO, joins/aggregates
+them with DataFrames, writes a partitioned Parquet dataset back to
+object storage, and loads a summary table into Postgres via JDBC —
+the "large dataset → Spark → warehouse" pattern.
+
+Local PySpark rather than Databricks, deliberately: Databricks now has
+a genuine free tier, but it's a separate hosted workspace disconnected
+from this repo, breaking the "one `docker compose up` gets you
+everything" story. Local PySpark uses the identical DataFrame API and
+concepts while staying fully integrated and reproducible.
+
+```bash
+./scripts/run_spark_job.sh
+```
+
+Verify with `SELECT * FROM spark_analytics.monthly_hospital_summary` in
+Postgres, or browse the partitioned Parquet output at
+`healthcare-raw-files/processed/hospital_visits_enriched/` in MinIO's
+console (`localhost:9001`) — partitioned by `admission_year`/
+`admission_month`, the standard data-lake layout. See `SPARK_README.md`
+for full details.
+
 ## Challenges encountered (and how they were resolved)
 
 Documenting these because working through them was most of the actual
@@ -286,20 +311,47 @@ engineering effort:
   as a test failure. Fixed by adding `TRUNCATE ... CASCADE` immediately
   before each `\copy`, making the raw load idempotent and consistent
   with its "untouched snapshot" description.
-- **Git Bash silently mangling container paths.** `upload_to_s3.sh`
-  passed `/opt/airflow/data/upload_to_object_storage.py` as a bare
-  argument to `docker exec`. Git Bash's MSYS2 layer auto-translates
-  arguments that look like POSIX absolute paths into Windows paths
-  before the command ever runs — so the container received
-  `C:/Program Files/Git/opt/airflow/data/...`, a path that only exists
-  on the Windows host, not inside the container. Other scripts in this
-  project were accidentally immune: they wrap their command in
-  `bash -c "..."` as a single string, and MSYS2's path-detection
-  heuristic doesn't fire on a whole quoted command the same way it does
-  on a bare path argument. Fixed by wrapping the same way — a good
-  example of a bug that's specific to the *combination* of tools
-  (Windows + Git Bash + Docker), not any one piece in isolation, and one
-  that only reproduces on that specific host setup.
+- **Git Bash silently mangling container paths — twice, two different
+  ways.** First occurrence: `upload_to_s3.sh` passed
+  `/opt/airflow/data/upload_to_object_storage.py` as a bare argument to
+  `docker exec`. Git Bash's MSYS2 layer auto-translates arguments that
+  look like POSIX absolute paths into Windows paths before the command
+  ever runs — the container received `C:/Program Files/Git/opt/airflow/...`,
+  a path that only exists on the Windows host. Fixed (at the time) by
+  wrapping the command in `bash -c "python3 /opt/..."`, since MSYS2's
+  heuristic didn't fire — but that fix turned out to be incidental, not
+  principled: it worked only because the string happened to *start* with
+  `python3`, not `/`. The real trigger is "does this argument start with
+  a leading slash," not "is this a whole command string." Second
+  occurrence, same bug, different command: `run_spark_job.sh` used
+  `docker compose run --rm spark sh -c "/opt/spark/bin/spark-submit..."`
+  — this time the quoted string itself started with `/`, so it got
+  translated anyway, `bash -c` wrapping notwithstanding. Properly fixed
+  with `MSYS_NO_PATHCONV=1` prefixed to the command, which disables the
+  translation mechanism outright rather than trying to out-format-trick
+  it. Lesson: fixing the symptom in one script instead of understanding
+  the actual trigger condition meant the same bug resurfaced in a
+  sibling script untouched by the first fix.
+- **JAR/image version guessing, resolved by checking rather than
+  assuming.** `Dockerfile.spark` initially referenced
+  `apache/spark-py:v3.5.0`, which doesn't exist — that repo's tags are
+  sparse and irregularly published, and `v3.5.0` was never one of them.
+  Confirmed the actual available tags before picking `v3.4.0` instead of
+  guessing again. Once the image itself resolved, `spark-submit` still
+  wasn't found as a bare command — this image's entrypoint is built for
+  Kubernetes pass-through and doesn't put `spark-submit` on `PATH`;
+  needed the full `/opt/spark/bin/spark-submit`. The Hadoop-AWS/AWS-SDK
+  JAR versions pinned for S3 connectivity happened to align with this
+  image's bundled Hadoop version on the first real try — not guaranteed,
+  and `SPARK_README.md` documents the fallback (`spark-submit --version`)
+  for when they don't.
+- **Missing schema caught by the JDBC write itself.** The first full
+  Spark run got all the way through reading, joining, and writing
+  partitioned Parquet, then failed on the very last step —
+  `schema "spark_analytics" does not exist` — because the schema-creation
+  script had been updated to add it, but hadn't been re-run since the
+  file was replaced. A reminder that "replace the file" and "re-run the
+  file" are two separate steps, easy to do out of order.
 
 ## Roadmap
 
@@ -312,7 +364,8 @@ This is Step 1 of a larger platform build:
    no psql, Python, or dbt required on the host machine, just Docker Desktop)
 5. ✅ **S3-pattern ingestion** (MinIO, S3-compatible, in place of real AWS S3 —
    see the section above for why; the actual `boto3` code is portable to real AWS)
-6. Spark/Databricks for large-dataset processing
+6. ✅ **Spark distributed processing** (local PySpark rather than Databricks —
+   same DataFrame API/concepts, stays integrated and reproducible)
 7. Kafka streaming for real-time events (admissions, lab results, vitals)
 8. Data quality & governance layer (Great Expectations, dbt tests, data
    dictionary, lineage documentation)
@@ -324,9 +377,15 @@ This is Step 1 of a larger platform build:
 ├── Dockerfile.airflow
 ├── AIRFLOW_README.md
 ├── MINIO_README.md
+├── SPARK_README.md
+├── Dockerfile.spark
+├── spark_jobs/
+│   └── spark_pipeline.py
 ├── scripts/                  # zero-host-dependency pipeline runners (docker exec wrappers)
 │   ├── run_all.sh
 │   ├── run_all_via_s3.sh     # same pipeline, routed through MinIO
+│   ├── run_all_with_spark.sh # S3 path + Spark job on top
+│   ├── run_spark_job.sh
 │   ├── setup_db.sh
 │   ├── generate_data.sh
 │   ├── load_data.sh
