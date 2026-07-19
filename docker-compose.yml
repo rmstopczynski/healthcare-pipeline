@@ -37,6 +37,7 @@ services:
     depends_on:
       - postgres
       - minio
+      - kafka
     environment:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
@@ -91,14 +92,10 @@ services:
 
   # ---------------------------------------------------------------------
   # Spark — PySpark jobs reading from MinIO (s3a://) and writing
-  # partitioned Parquet back to MinIO + a summary table into Postgres
-  # via JDBC. This is a batch-job image, not a long-running service --
-  # it's meant to be run with `docker compose run --rm spark ...`
+  # partitioned Parquet + a summary table into Postgres via JDBC.
+  # Batch-job image, meant for `docker compose run --rm spark ...`
   # (see scripts/run_spark_job.sh), not left running via `up`.
-  #
-  # NOTE: first build downloads ~250MB of JARs (hadoop-aws, aws SDK,
-  # postgres JDBC driver) and can take several minutes.
-  # Spark UI (visible while a job is running) at http://localhost:4040
+  # Spark UI (while a job is running) at http://localhost:4040
   # ---------------------------------------------------------------------
   spark:
     build:
@@ -113,6 +110,63 @@ services:
       - ./spark_jobs:/opt/spark_jobs
     ports:
       - "4040:4040"
+
+  # ---------------------------------------------------------------------
+  # Kafka — single-node broker in KRaft mode (no ZooKeeper needed).
+  # PLAINTEXT listener for container-to-container traffic (kafka:9092),
+  # EXTERNAL listener for host-machine tools if you ever want to connect
+  # directly (localhost:9094).
+  # ---------------------------------------------------------------------
+  kafka:
+    image: apache/kafka:latest
+    container_name: healthcare_kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    ports:
+      - "9094:9094"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # One-shot: creates the "patient-events" topic, then exits.
+  kafka-init:
+    image: apache/kafka:latest
+    container_name: healthcare_kafka_init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic patient-events --partitions 3 --replication-factor 1 &&
+      echo 'Topic ready.'
+      "
+
+  # Browser UI for Kafka — browse topics, partitions, and messages.
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: healthcare_kafka_ui
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "8084:8080"
 
 volumes:
   healthcare_pg_data:

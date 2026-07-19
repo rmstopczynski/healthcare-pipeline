@@ -12,12 +12,14 @@ CREATE SCHEMA IF NOT EXISTS raw;
 CREATE SCHEMA IF NOT EXISTS staging;
 CREATE SCHEMA IF NOT EXISTS analytics;
 CREATE SCHEMA IF NOT EXISTS spark_analytics;
+CREATE SCHEMA IF NOT EXISTS streaming;
 
 -- healthcare_db
---   raw              -> untouched source data
---   staging          -> cleaned/transformed tables
---   analytics        -> business-ready star schema (SQL + dbt paths both write here)
+--   raw               -> untouched source data
+--   staging           -> cleaned/transformed tables
+--   analytics         -> business-ready star schema (SQL + dbt paths both write here)
 --   spark_analytics   -> tables written by PySpark jobs (spark_jobs/spark_pipeline.py)
+--   streaming         -> tables written by the Kafka consumer (data/kafka_consumer.py)
 
 -- NOTE: Postgres has no separate "warehouse" (compute) concept like
 -- Snowflake -- storage and compute aren't decoupled. There's nothing to

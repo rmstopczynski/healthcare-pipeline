@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the raw/staging/analytics schema and tables.
+# Builds the raw/staging/analytics/streaming schema and tables.
 # Runs psql INSIDE the healthcare_pg container -- your host machine
 # doesn't need psql installed at all. Local .sql files are piped in
 # over stdin (docker exec -i), so nothing needs to be pre-mounted.
@@ -17,5 +17,8 @@ docker exec -i healthcare_pg psql -U healthcare -d healthcare_db < sql/02_stagin
 
 echo "==> Creating analytics tables (empty until data is loaded)..."
 docker exec -i healthcare_pg psql -U healthcare -d healthcare_db < sql/03_analytics_tables.sql
+
+echo "==> Creating streaming tables..."
+docker exec -i healthcare_pg psql -U healthcare -d healthcare_db < sql/06_streaming_tables.sql
 
 echo "==> Schema setup complete."

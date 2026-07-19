@@ -1,7 +1,9 @@
 # Extends the official Airflow image with everything our DAG and
-# scripts need that isn't there by default: the psql client, dbt,
-# faker (for synthetic data generation), boto3 (S3/MinIO client), and
-# psycopg2 (direct Postgres access from Python).
+# scripts need: psql, dbt, faker (synthetic data), boto3 (S3/MinIO),
+# psycopg2 (direct Postgres access), and kafka-python (pure-Python
+# Kafka client -- deliberately not confluent-kafka, which needs
+# librdkafka compiled and is another version-alignment risk we don't
+# need here).
 FROM apache/airflow:2.9.3
 
 USER root
@@ -16,4 +18,5 @@ RUN pip install --no-cache-dir \
     dbt-postgres==1.8.* \
     faker \
     boto3 \
-    psycopg2-binary
+    psycopg2-binary \
+    kafka-python
