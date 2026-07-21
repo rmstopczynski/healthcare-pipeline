@@ -430,13 +430,6 @@ This is Step 1 of a larger platform build:
    same DataFrame API/concepts, stays integrated and reproducible)
 7. ✅ **Kafka streaming** (plain `kafka-python` consumer rather than Spark
    Structured Streaming — same core Kafka mechanics, see the section above for why)
-8. ⏭️ **Data quality & governance layer** — deliberately not built as a
-   separate step. The core of this (validation, testing, referential
-   integrity checks) is already covered by the 60 dbt tests in Step 2;
-   adding Great Expectations on top would mostly demonstrate the same
-   concept through a second tool's API rather than add new coverage.
-   Real-world governance experience (Informatica) exists outside this
-   project already — no need to simulate it here too.
 
 ## Repo structure
 
