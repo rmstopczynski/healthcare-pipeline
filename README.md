@@ -25,6 +25,8 @@ Full architecture (all 7 layers):
 
 ## Contents
 
+- [Origin and rebuild scope](#origin-and-rebuild-scope)
+- [Architecture: batch and streaming, deliberately](#architecture-batch-and-streaming-deliberately)
 - [Why Postgres instead of Snowflake](#why-postgres-instead-of-snowflake)
 - [Source schema](#source-schema)
 - [Quickstart](#quickstart)
@@ -40,6 +42,46 @@ Full architecture (all 7 layers):
 - [Roadmap](#roadmap)
 - [Repo structure](#repo-structure)
 - [Resume & interview talking points](RESUME_TALKING_POINTS.md)
+
+## Origin and rebuild scope
+
+The **schema design** — the star schema, the fact/dimension split, the
+Julian date dimension, the original ERD — came out of a group project for
+a university course (ISM 6208, Data Warehousing). That project's paper
+proposed a healthcare data warehouse using Oracle, synthetic data
+generated with Mockaroo, and OLAP/OLTP schema comparisons; there's no
+public repo for it, just the paper and diagrams.
+
+Everything past the schema concept is original, solo work: the synthetic
+data generator here uses Faker, not Mockaroo, and produces its own
+dataset independent of the original project's data; the entire technical
+implementation (Postgres, Docker, dbt, Airflow, MinIO, PySpark, Kafka)
+didn't exist in the original project at all.
+
+Worth calling out directly: the original paper's own "Next Steps"
+section states *"Snowflake or another suitable option should be
+utilized as the data warehouse platform"* — recommending, but never
+implementing, a move to a real cloud warehouse. That's exactly where
+this project starts. The paper also flagged real limitations —
+no Slowly Changing Dimension (SCD2) handling, and a
+recommendation to "transition from batch ETL to streaming data
+pipelines" for real-time metrics. The Kafka layer in this repo is a
+direct answer to that second point, built independently, well past
+what the original coursework scoped.
+
+## Architecture: batch and streaming, deliberately
+
+This isn't seven tools bolted together for their own sake — it models
+two real data patterns a hospital system actually has. Structured
+historical records (admissions, billing, insurance claims) arrive in
+batches: that's the `RAW → STAGING → ANALYTICS` pipeline, dbt, Airflow,
+and Spark. Continuous operational events (vitals, lab results) arrive as
+a stream: that's the Kafka layer. Both land in the same Postgres
+warehouse. This is a common hybrid pattern in production data
+platforms (sometimes called a Lambda architecture — a batch layer and a
+speed layer feeding one serving layer) — built here as one integrated
+system rather than two disconnected exercises, specifically because
+that's how it actually gets used in practice.
 
 ## Why Postgres instead of Snowflake
 
@@ -375,6 +417,8 @@ lesson, not just "and then it worked":
 
 ## Roadmap
 
+This is Step 1 of a larger platform build:
+
 1. ✅ **Cloud/local warehouse migration** (this repo)
 2. ✅ **dbt transformation layer** (staging/analytics as dbt models, 60 tests, docs, lineage)
 3. ✅ **Airflow orchestration** (scheduled, monitored, retryable end-to-end DAG)
@@ -386,6 +430,13 @@ lesson, not just "and then it worked":
    same DataFrame API/concepts, stays integrated and reproducible)
 7. ✅ **Kafka streaming** (plain `kafka-python` consumer rather than Spark
    Structured Streaming — same core Kafka mechanics, see the section above for why)
+8. ⏭️ **Data quality & governance layer** — deliberately not built as a
+   separate step. The core of this (validation, testing, referential
+   integrity checks) is already covered by the 60 dbt tests in Step 2;
+   adding Great Expectations on top would mostly demonstrate the same
+   concept through a second tool's API rather than add new coverage.
+   Real-world governance experience (Informatica) exists outside this
+   project already — no need to simulate it here too.
 
 ## Repo structure
 

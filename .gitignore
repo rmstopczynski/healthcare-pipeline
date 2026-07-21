@@ -2,3 +2,8 @@ __pycache__/
 *.pyc
 .env
 synthetic_data/
+
+# dbt run artifacts - regenerated every run, shouldn't be tracked
+dbt/healthcare_dbt/target/
+dbt/healthcare_dbt/logs/
+dbt/healthcare_dbt/dbt_packages/
